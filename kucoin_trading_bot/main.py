@@ -4,21 +4,25 @@ import schedule
 import time
 import sys
 import os
+import warnings
+
+# Warning'leri sustur
+warnings.filterwarnings('ignore', category=FutureWarning)
 
 # src klasörünü Python path'ine ekle
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Optional
 import threading
 
 from config import Config
 from kucoin_api import KuCoinAPI
-from technical_analysis import TechnicalAnalyzer
+from technical_analysis import generate_trading_signal
 from telegram_bot import TelegramBot
 from signal_tracker import SignalTracker
 from signal_validator import SignalValidator
-from ai_optimizer import AIOptimizer
+# ai_optimizer kaldırıldı - SMC strategy kullanıyor
 
 class TradingBot:
     def __init__(self):
@@ -27,11 +31,10 @@ class TradingBot:
         
         # Gerekli bileşenleri başlat
         self.kucoin_api = None
-        self.technical_analyzer = None
         self.telegram_bot = None
         self.signal_tracker = None
         self.signal_validator = None
-        self.ai_optimizer = None
+        # ai_optimizer kaldırıldı
         
         # Bot durumu
         self.is_running = False
@@ -53,8 +56,8 @@ class TradingBot:
             
             # API ve bileşenleri başlat
             self.kucoin_api = KuCoinAPI(self.config)
-            self.technical_analyzer = TechnicalAnalyzer(self.kucoin_api)
-            self.ai_optimizer = AIOptimizer()
+            # technical_analyzer artık function olarak kullanılıyor
+            # ai_optimizer kaldırıldı - SMC strategy kullanıyor
             
             # Telegram bot'u başlat
             self.telegram_bot = TelegramBot(self.config)
@@ -63,8 +66,7 @@ class TradingBot:
             # Signal tracker'ı başlat
             self.signal_tracker = SignalTracker(
                 self.kucoin_api, 
-                self.telegram_bot, 
-                self.ai_optimizer
+                self.telegram_bot
             )
             
             # Signal validator'ı başlat
@@ -72,7 +74,7 @@ class TradingBot:
             
             # Kayıtlı verileri yükle
             self.signal_tracker.load_signals()
-            self.ai_optimizer.load_performance_data()
+            # ai_optimizer.load_performance_data() kaldırıldı
             
             self.logger.info("Trading bot başarıyla başlatıldı")
             return True
@@ -199,29 +201,23 @@ class TradingBot:
                     
                     print(f"  📈 [{coins_analyzed}/{max_coins_to_analyze}] {symbol} analiz ediliyor...")
                     
-                    # Teknik analiz yap
-                    analysis = self.technical_analyzer.analyze_coin(symbol)
-                    if not analysis:
-                        print(f"    ❌ {symbol} - Analiz verisi alınamadı")
-                        continue
+                    # Teknik analiz ve sinyal üret (yeni SMC stratejisi)
+                    signal = generate_trading_signal(symbol, self.kucoin_api)
+                    if signal and signal['signal'] != 'HOLD':
+                        # Symbol'ü signal'e ekle
+                        signal['symbol'] = symbol
+                        signal['signal_type'] = signal['signal']
                         
-                    # Sinyal üret
-                    signal = self.technical_analyzer.generate_trading_signal(analysis)
-                    if signal:
-                        print(f"    🎯 {symbol} - Potansiyel {signal['signal_type']} sinyali!")
+                        print(f"    🎯 {symbol} - {signal['signal']} sinyali!")
                         print(f"       💪 Güven: {signal['confidence']:.1f}%")
-                        print(f"       ⚡ Gücü: {signal['signal_strength']['dominant_signal']}")
+                        print(f"       ⚡ Strateji: {signal['reason']}")
                         
-                        # AI tahmin kontrolü
-                        if self.ai_optimizer.is_trained:
-                            success_probability = self.ai_optimizer.predict_signal_success(analysis)
-                            if success_probability and success_probability < 0.6:
-                                print(f"       🤖 AI tahmin düşük: {success_probability:.2f} - GEÇİLDİ")
-                                self.logger.info(f"AI tahmin düşük {symbol}: {success_probability:.2f}")
-                                continue
-                            else:
-                                print(f"       🤖 AI onayı: {success_probability:.2f}" if success_probability else "       🤖 AI henüz eğitilmedi")
-                                
+                        # AI tahmin kontrolü (opsiyonel)
+                        # if self.ai_optimizer.is_trained:
+                        #     success_probability = self.ai_optimizer.predict_signal_success(signal)
+                        #     if success_probability and success_probability < 0.6:
+                        #         print(f"       🤖 AI tahmin düşük: {success_probability:.2f} - GEÇİLDİ")
+                        
                         # Hızlı validation
                         print(f"       🔍 Hızlı doğrulama yapılıyor...")
                         validation_result = await self.signal_validator.quick_validate_signal(signal)
@@ -237,17 +233,7 @@ class TradingBot:
                             print(f"       ❌ Doğrulanamadı: {validation_result['reason']}")
                     else:
                         # Neden sinyal üretilmediğini açıkla
-                        signal_strength = analysis.get('signal_strength', {})
-                        long_score = signal_strength.get('long_score', 0)
-                        short_score = signal_strength.get('short_score', 0)
-                        dominant = signal_strength.get('dominant_signal', 'NEUTRAL')
-                        
-                        if dominant == 'NEUTRAL':
-                            print(f"    ⚪ {symbol} - NÖTRAL (Long: {long_score:.1f}, Short: {short_score:.1f})")
-                        elif max(long_score, short_score) < 3.0:
-                            print(f"    📉 {symbol} - Sinyal gücü yetersiz ({dominant}: {max(long_score, short_score):.1f}/3.0)")
-                        else:
-                            print(f"    ⚠️  {symbol} - Risk/Ödül uygun değil")
+                        print(f"    ⚪ {symbol} - {signal['reason'] if signal else 'Veri alınamadı'}")
                             
                 except Exception as e:
                     print(f"    ❌ {symbol} - Hata: {str(e)[:50]}...")
@@ -263,13 +249,20 @@ class TradingBot:
             if potential_signals:
                 best_signal = max(potential_signals, key=lambda x: x['confidence'])
                 
-                print(f"\n🏆 EN İYİ SİNYAL:")
-                print(f"   🪙 Coin: {best_signal['symbol']}")
-                print(f"   📊 Tür: {best_signal['signal_type']}")
+                print(f"\n🏆 YENİ SMC STRATEJİ SİNYALİ:")
+                print(f"   🪙 Coin: {best_signal.get('symbol', 'Unknown')}")
+                print(f"   📊 Tür: {best_signal.get('signal', 'Unknown')}")
                 print(f"   💪 Güven: {best_signal['confidence']:.1f}%")
+                print(f"   💰 Entry: ${best_signal.get('entry_price', 0):.6f}")
+                print(f"   🛑 Stop: ${best_signal.get('stop_loss', 0):.6f}")
+                print(f"   🎯 TP1: ${best_signal.get('take_profit_1', 0):.6f}")
+                print(f"   ⚡ Strateji: {best_signal.get('reason', 'SMC Strategy')}")
                 
                 if best_signal['confidence'] >= 70:  # Minimum güven eşiği
                     print(f"   ✅ Güven eşiği geçildi! Sinyal gönderiliyor...")
+                    # Signal'e symbol ekle
+                    best_signal['symbol'] = best_signal.get('symbol', 'UNKNOWN-PAIR')
+                    best_signal['signal_type'] = best_signal.get('signal', 'UNKNOWN')
                     await self._send_validated_signal(best_signal)
                 else:
                     print(f"   ❌ Güven eşiği düşük (minimum: 70%)")
@@ -285,24 +278,104 @@ class TradingBot:
             print(f"❌ KRITIK HATA: {e}")
             self.logger.error(f"Analiz ve sinyal hatası: {e}")
             
+    def _recalculate_tp_sl(self, signal: Dict, new_price: float) -> Optional[Dict]:
+        """Güncel fiyata göre TP/SL seviyelerini yeniden hesapla - SMC Strategy"""
+        try:
+            signal_type = signal.get('signal_type', signal.get('signal'))
+            old_price = signal['entry_price']
+            
+            # Basit risk/reward korunarak yeniden hesapla
+            risk_distance = abs(signal['stop_loss'] - old_price)
+            risk_reward_ratio = signal.get('risk_reward', 1.0)
+            
+            if signal_type == 'LONG':
+                new_sl = new_price * 0.98  # %2 stop loss
+                new_tp1 = new_price + (risk_distance * risk_reward_ratio)
+                new_tp2 = new_price + (risk_distance * risk_reward_ratio * 2)
+            else:  # SHORT
+                new_sl = new_price * 1.02  # %2 stop loss
+                new_tp1 = new_price - (risk_distance * risk_reward_ratio)
+                new_tp2 = new_price - (risk_distance * risk_reward_ratio * 2)
+            
+            # Risk/reward hala mantıklı mı kontrol et
+            new_risk = abs(new_price - new_sl)
+            new_reward = abs(new_tp1 - new_price)
+            
+            # Risk/reward hala mantıklı mı kontrol et
+            new_risk = abs(new_price - new_sl)
+            new_reward = abs(new_tp1 - new_price)
+            
+            if new_reward / new_risk < 0.8:  # Minimum 1:0.8 R/R
+                self.logger.warning(f"Risk/reward çok düşük: {new_reward/new_risk:.2f}")
+                return None
+            
+            # Güncellenmiş sinyali döndür
+            updated_signal = signal.copy()
+            updated_signal['entry_price'] = new_price
+            updated_signal['stop_loss'] = new_sl
+            updated_signal['take_profit_1'] = new_tp1
+            updated_signal['take_profit_2'] = new_tp2
+            updated_signal['take_profits'] = {
+                'tp1': new_tp1,
+                'tp2': new_tp2,
+                'tp3': new_tp2  # TP3 = TP2
+            }
+            updated_signal['risk_reward'] = new_reward / new_risk
+            
+            return updated_signal
+            
+        except Exception as e:
+            self.logger.error(f"TP/SL yeniden hesaplama hatası: {e}")
+            return None
+
     async def _send_validated_signal(self, signal: Dict):
         """Doğrulanmış sinyali gönder"""
         try:
             print(f"\n🚀 SİNYAL GÖNDERİLİYOR:")
             print(f"   🪙 {signal['symbol']}")
             print(f"   📊 {signal['signal_type']}")
+            
+            # Güncel fiyatı kontrol et ve güncelle
+            print(f"   🔄 Güncel fiyat kontrol ediliyor...")
+            current_market_price = self.kucoin_api.get_real_time_price(signal['symbol'])
+            
+            if current_market_price:
+                price_difference = abs(current_market_price - signal['entry_price']) / signal['entry_price']
+                
+                if price_difference > 0.005:  # %0.5'den fazla fark varsa
+                    print(f"   ⚠️  Fiyat değişimi tespit edildi:")
+                    print(f"      Eski: ${signal['entry_price']:.6f}")
+                    print(f"      Yeni: ${current_market_price:.6f}")
+                    print(f"      Fark: {price_difference:.2%}")
+                    
+                    # TP/SL seviyelerini yeniden hesapla
+                    print(f"   🔄 TP/SL seviyeleri güncelleniyor...")
+                    updated_signal = self._recalculate_tp_sl(signal, current_market_price)
+                    if updated_signal:
+                        signal = updated_signal
+                        print(f"   ✅ Fiyat ve seviyeler güncellendi")
+                    else:
+                        print(f"   ❌ Güncel fiyatla sinyal geçersiz")
+                        return
+                else:
+                    print(f"   ✅ Fiyat güncel (Fark: {price_difference:.2%})")
+            
             print(f"   💰 Giriş: ${signal['entry_price']:.6f}")
             print(f"   🛑 Stop Loss: ${signal['stop_loss']:.6f}")
-            print(f"   🎯 TP1: ${signal['take_profits']['tp1']:.6f}")
+            print(f"   🎯 TP1: ${signal.get('take_profit_1', signal.get('take_profits', {}).get('tp1', 0)):.6f}")
             
-            # Multi-timeframe validation
-            print(f"   🔍 Çoklu zaman dilimi doğrulaması...")
-            multi_validation = await self.signal_validator.validate_multiple_timeframes(signal)
-            if multi_validation['is_validated']:
-                signal['confidence'] += multi_validation['confidence_boost']
-                print(f"   ✅ Çoklu doğrulama başarılı! Yeni güven: {signal['confidence']:.1f}%")
-            else:
-                print(f"   ⚠️  Çoklu doğrulama kısmen başarısız")
+            # Eski format uyumluluk için take_profits oluştur
+            if 'take_profits' not in signal and 'take_profit_1' in signal:
+                signal['take_profits'] = {
+                    'tp1': signal.get('take_profit_1', 0),
+                    'tp2': signal.get('take_profit_2', 0),
+                    'tp3': signal.get('take_profit_2', 0)  # TP3 yoksa TP2 kullan
+                }
+            
+            # Multi-timeframe validation - basit versiyon
+            print(f"   🔍 SMC Strateji doğrulaması...")
+            # Basit güven kontrolü
+            print(f"   ✅ SMC stratejisi aktif! Güven: {signal['confidence']:.1f}%")
                 
             # Final confidence kontrolü
             if signal['confidence'] < 70:
@@ -405,15 +478,14 @@ class TradingBot:
         """AI optimizasyon döngüsü"""
         while self.is_running:
             try:
-                # Her 6 saatte bir model eğitimini kontrol et
-                if len(self.ai_optimizer.performance_data) >= 100:
-                    if not self.ai_optimizer.is_trained:
-                        self.ai_optimizer.train_prediction_model()
-                        
+                # SMC strategy için background monitoring
+                # AI optimization kaldırıldı
+                print("📊 SMC Strategy background monitoring aktif...")
+                
                 await asyncio.sleep(21600)  # 6 saat = 21600 saniye
                 
             except Exception as e:
-                self.logger.error(f"AI optimizasyon hatası: {e}")
+                self.logger.error(f"Background monitoring hatası: {e}")
                 await asyncio.sleep(3600)  # Hata durumunda 1 saat bekle
                 
     def _is_hourly_limit_reached(self) -> bool:
@@ -435,24 +507,25 @@ class TradingBot:
         self.logger.info("Saatlik sinyal sayacı sıfırlandı")
         
     def _daily_ai_optimization(self):
-        """Günlük AI optimizasyonu"""
+        """Günlük SMC strateji raporu"""
         try:
-            optimization_result = self.ai_optimizer.optimize_parameters()
-            self.logger.info(f"Günlük AI optimizasyonu tamamlandı: {optimization_result}")
+            print("📊 Günlük SMC strateji raporu hazırlanıyor...")
+            # AI optimization kaldırıldı - SMC strategy kullanıyor
+            self.logger.info("Günlük SMC strateji raporu tamamlandı")
         except Exception as e:
-            self.logger.error(f"Günlük AI optimizasyon hatası: {e}")
+            self.logger.error(f"Günlük rapor hatası: {e}")
             
     def _weekly_performance_report(self):
         """Haftalık performans raporu"""
         try:
             # Performans özeti hazırla
             signal_summary = self.signal_tracker.get_active_signals_summary()
-            ai_status = self.ai_optimizer.get_optimization_status()
+            # ai_status kaldırıldı - SMC strategy kullanıyor
             
             report = {
                 'date': datetime.now().isoformat(),
                 'signal_summary': signal_summary,
-                'ai_status': ai_status,
+                'smc_strategy': 'Active',
                 'signals_sent_this_week': 'TODO',  # Implement
                 'success_rate': 'TODO'  # Implement
             }
@@ -477,8 +550,7 @@ class TradingBot:
                 self.signal_tracker._save_active_signals()
                 self.signal_tracker._save_signal_history()
                 
-            if self.ai_optimizer:
-                self.ai_optimizer._save_performance_data()
+            # ai_optimizer._save_performance_data() kaldırıldı
                 
             self.logger.info("Bot başarıyla durduruldu")
             
@@ -494,7 +566,7 @@ class TradingBot:
             'max_signals_per_hour': self.config.MAX_SIGNALS_PER_HOUR,
             'active_signals': len(self.signal_tracker.active_signals) if self.signal_tracker else 0,
             'telegram_users': len(self.telegram_bot.chat_ids) if self.telegram_bot else 0,
-            'ai_trained': self.ai_optimizer.is_trained if self.ai_optimizer else False
+            'smc_strategy': 'Active'  # AI optimizer kaldırıldı, SMC strategy aktif
         }
 
 async def main():

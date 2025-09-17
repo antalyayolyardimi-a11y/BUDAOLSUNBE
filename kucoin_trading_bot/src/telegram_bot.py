@@ -250,26 +250,68 @@ Bot'u kullandığınız için teşekkürler! 👋
         symbol = signal['symbol']
         entry_price = signal['entry_price']
         stop_loss = signal['stop_loss']
-        take_profits = signal['take_profits']
+        
+        # SMC strategy'de take_profits yerine take_profit_1 var
+        if 'take_profits' in signal:
+            take_profits = signal['take_profits']
+            tp1, tp2, tp3 = take_profits['tp1'], take_profits['tp2'], take_profits['tp3']
+        else:
+            # Yeni SMC format
+            tp1 = signal.get('take_profit_1', signal.get('tp1', entry_price))
+            tp2 = signal.get('take_profit_2', signal.get('tp2', entry_price))  
+            tp3 = signal.get('take_profit_3', signal.get('tp3', entry_price))
+        
         confidence = signal['confidence']
-        risk_reward = signal['risk_reward_ratio']
+        
+        # Risk/Reward hesapla (yoksa hesapla)
+        if 'risk_reward_ratio' in signal:
+            risk_reward = signal['risk_reward_ratio']
+        else:
+            # R:R'ı hesapla
+            risk = abs(entry_price - stop_loss)
+            reward = abs(tp1 - entry_price)
+            risk_reward = reward / risk if risk > 0 else 1.0
         
         # Emoji seçimi
         emoji = "🟢" if signal_type == "LONG" else "🔴"
         arrow = "📈" if signal_type == "LONG" else "📉"
         
+        # Fiyat formatı belirleme
+        def format_price(price):
+            if price >= 1:
+                return f"${price:.4f}"
+            elif price >= 0.01:
+                return f"${price:.6f}"
+            else:
+                return f"${price:.8f}"
+        
+        # TP/SL doğrulama
+        tp1, tp2, tp3 = take_profits['tp1'], take_profits['tp2'], take_profits['tp3']
+        
+        # Sıralama kontrolü ve düzeltmesi
+        if signal_type == "LONG":
+            # LONG için TP1 < TP2 < TP3 olmalı
+            if not (tp1 < tp2 < tp3):
+                tp_list = sorted([tp1, tp2, tp3])
+                tp1, tp2, tp3 = tp_list[0], tp_list[1], tp_list[2]
+        else:  # SHORT
+            # SHORT için TP1 > TP2 > TP3 olmalı  
+            if not (tp1 > tp2 > tp3):
+                tp_list = sorted([tp1, tp2, tp3], reverse=True)
+                tp1, tp2, tp3 = tp_list[0], tp_list[1], tp_list[2]
+        
         message = f"""
 {emoji} **{signal_type} SİNYALİ** {arrow}
 
 🪙 **Coin:** {symbol}
-💰 **Giriş:** ${entry_price:.6f}
+💰 **Giriş:** {format_price(entry_price)}
 
 🎯 **Take Profit Seviyeleri:**
-• TP1: ${take_profits['tp1']:.6f}
-• TP2: ${take_profits['tp2']:.6f}  
-• TP3: ${take_profits['tp3']:.6f}
+• TP1: {format_price(tp1)}
+• TP2: {format_price(tp2)}  
+• TP3: {format_price(tp3)}
 
-🛑 **Stop Loss:** ${stop_loss:.6f}
+🛑 **Stop Loss:** {format_price(stop_loss)}
 
 📊 **Analiz Bilgileri:**
 • Güven Oranı: {confidence:.1f}%

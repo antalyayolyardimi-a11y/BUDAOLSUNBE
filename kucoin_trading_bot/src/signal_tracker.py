@@ -8,7 +8,6 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 from kucoin_api import KuCoinAPI
 from telegram_bot import TelegramBot
-from ai_optimizer import AIOptimizer
 
 class SignalStatus(Enum):
     ACTIVE = "active"
@@ -40,10 +39,9 @@ class TrackedSignal:
     analysis_data: Dict
     
 class SignalTracker:
-    def __init__(self, kucoin_api: KuCoinAPI, telegram_bot: TelegramBot, ai_optimizer: AIOptimizer):
+    def __init__(self, kucoin_api: KuCoinAPI, telegram_bot: TelegramBot):
         self.api = kucoin_api
         self.telegram_bot = telegram_bot
-        self.ai_optimizer = ai_optimizer
         self.logger = logging.getLogger(__name__)
         
         self.active_signals: Dict[str, TrackedSignal] = {}
@@ -283,12 +281,11 @@ class SignalTracker:
                     'tp2': signal.tp2,
                     'tp3': signal.tp3
                 },
-                'signal_strength': {},  # Buradan alınacak
-                'confidence': 0,  # Buradan alınacak
+                'confidence': 0.0,
                 'analysis': signal.analysis_data
             }
             
-            performance_result = self.ai_optimizer.analyze_signal_performance(signal_dict, outcome)
+            # Performance analizi artık yapılmıyor - direkt tamamla
             
             # Completed signals listesine ekle
             self.completed_signals.append(signal)

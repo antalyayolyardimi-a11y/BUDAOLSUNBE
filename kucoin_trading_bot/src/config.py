@@ -22,10 +22,6 @@ class Config:
         self.VALIDATION_INTERVAL = int(os.getenv('VALIDATION_INTERVAL', 5))
         self.MAX_SIGNALS_PER_HOUR = int(os.getenv('MAX_SIGNALS_PER_HOUR', 5))
         
-        # AI Optimization
-        self.LEARNING_RATE = float(os.getenv('LEARNING_RATE', 0.01))
-        self.OPTIMIZATION_INTERVAL = int(os.getenv('OPTIMIZATION_INTERVAL', 24))
-        
         # API Endpoints
         if self.KUCOIN_SANDBOX:
             self.KUCOIN_BASE_URL = 'https://openapi-sandbox.kucoin.com'
@@ -45,6 +41,11 @@ class Config:
                 logging.StreamHandler()
             ]
         )
+        
+        # HTTP isteklerini ve telegram loglarını sustur
+        logging.getLogger('httpx').setLevel(logging.WARNING)
+        logging.getLogger('telegram').setLevel(logging.WARNING)
+        logging.getLogger('telegram.ext').setLevel(logging.WARNING)
         
     def validate_config(self):
         """Gerekli konfigürasyonların kontrolü"""
