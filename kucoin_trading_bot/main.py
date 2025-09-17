@@ -16,12 +16,12 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import threading
 
-from config import Config
-from kucoin_api import KuCoinAPI
-from technical_analysis import generate_trading_signal
-from telegram_bot import TelegramBot
-from signal_tracker import SignalTracker
-from signal_validator import SignalValidator
+from src.config import Config
+from src.kucoin_api import KuCoinAPI
+from src.technical_analysis import generate_trading_signal
+from src.telegram_bot import TelegramBot
+from src.signal_tracker import SignalTracker
+from src.signal_validator import SignalValidator
 # ai_optimizer kaldırıldı - SMC strategy kullanıyor
 
 class TradingBot:
@@ -98,7 +98,7 @@ class TradingBot:
         print(f"   • Minimum Hacim: ${self.config.MIN_VOLUME_USDT:,}")
         print(f"   • Analiz Aralığı: {self.config.ANALYSIS_INTERVAL} dakika")
         print(f"   • Saatlik Max Sinyal: {self.config.MAX_SIGNALS_PER_HOUR}")
-        print(f"   • Telegram Token: {self.config.TELEGRAM_BOT_TOKEN[:20]}...")
+        print(f"   • Telegram Token: {self.config.TELEGRAM_BOT_TOKEN[:20] if self.config.TELEGRAM_BOT_TOKEN else 'None'}...")
         print("=" * 60)
         
         # Schedule'ları ayarla

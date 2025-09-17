@@ -15,12 +15,15 @@ class TelegramBot:
         self.authorized_users = set()
         self.chat_ids = set()
         self.logger = logging.getLogger(__name__)
-        self.application = None
-        self.bot = None
+        self.application: Optional[Application] = None
+        self.bot: Optional[Bot] = None
         
     async def initialize(self):
         """Bot'u başlat"""
         try:
+            if not self.bot_token:
+                raise ValueError("Telegram bot token eksik!")
+                
             self.application = Application.builder().token(self.bot_token).build()
             self.bot = self.application.bot
             
@@ -285,16 +288,17 @@ Bot'u kullandığınız için teşekkürler! 👋
             else:
                 return f"${price:.8f}"
         
-        # TP/SL doğrulama
-        tp1, tp2, tp3 = take_profits['tp1'], take_profits['tp2'], take_profits['tp3']
-        
-        # Sıralama kontrolü ve düzeltmesi
+        # TP seviyeleri için sıralama kontrolü
         if signal_type == "LONG":
             # LONG için TP1 < TP2 < TP3 olmalı
             if not (tp1 < tp2 < tp3):
                 tp_list = sorted([tp1, tp2, tp3])
                 tp1, tp2, tp3 = tp_list[0], tp_list[1], tp_list[2]
         else:  # SHORT
+            # SHORT için TP1 > TP2 > TP3 olmalı  
+            if not (tp1 > tp2 > tp3):
+                tp_list = sorted([tp1, tp2, tp3], reverse=True)
+                tp1, tp2, tp3 = tp_list[0], tp_list[1], tp_list[2]
             # SHORT için TP1 > TP2 > TP3 olmalı  
             if not (tp1 > tp2 > tp3):
                 tp_list = sorted([tp1, tp2, tp3], reverse=True)
