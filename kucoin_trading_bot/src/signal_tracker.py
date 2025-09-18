@@ -281,11 +281,35 @@ class SignalTracker:
                     'tp2': signal.tp2,
                     'tp3': signal.tp3
                 },
-                'confidence': 0.0,
+                'confidence': signal.analysis_data.get('confidence', 0.0),
                 'analysis': signal.analysis_data
             }
             
-            # Performance analizi artık yapılmıyor - direkt tamamla
+            # Gerçek sonuç verisi
+            result_data = {
+                'success': len(signal.hit_tp_levels) > 0,  # En az TP1 vurduysa başarılı
+                'profit_loss_percent': self._calculate_profit_loss(signal),
+                'hit_tp1': 1 in signal.hit_tp_levels,
+                'hit_tp2': 2 in signal.hit_tp_levels,
+                'hit_tp3': 3 in signal.hit_tp_levels,
+                'hit_sl': signal.status == SignalStatus.STOP_LOSS,
+                'duration_minutes': int((signal.updated_at - signal.created_at).total_seconds() / 60),
+                'market_condition': self._determine_market_condition(signal),
+                'stop_loss_reason': completion_reason if signal.status == SignalStatus.STOP_LOSS else None
+            }
+            
+            # AI Optimizer'a sinyal sonucunu gönder
+            try:
+                from ai_optimizer import AIOptimizer
+                ai_optimizer = AIOptimizer()
+                ai_optimizer.record_signal_result(signal_dict, result_data)
+                
+                # SL nedeni analizi için özel feedback
+                if signal.status == SignalStatus.STOP_LOSS:
+                    ai_optimizer.analyze_stop_loss_patterns(signal_dict, result_data)
+                    
+            except Exception as ai_error:
+                self.logger.error(f"AI feedback hatası: {ai_error}")
             
             # Completed signals listesine ekle
             self.completed_signals.append(signal)
@@ -316,6 +340,30 @@ class SignalTracker:
         """Sinyalin süresi dolmuş mu kontrol et"""
         age_hours = (datetime.now() - signal.created_at).total_seconds() / 3600
         return age_hours > self.max_signal_age_hours
+    
+    def _calculate_profit_loss(self, signal: TrackedSignal) -> float:
+        """Kar/zarar yüzdesini hesapla"""
+        try:
+            if signal.signal_type == "LONG":
+                profit_loss = ((signal.current_price - signal.entry_price) / signal.entry_price) * 100
+            else:  # SHORT
+                profit_loss = ((signal.entry_price - signal.current_price) / signal.entry_price) * 100
+            return round(profit_loss, 2)
+        except:
+            return 0.0
+    
+    def _determine_market_condition(self, signal: TrackedSignal) -> str:
+        """Piyasa koşulunu belirle"""
+        try:
+            # Basit market condition analizi
+            if signal.max_profit_percentage > 3:
+                return "TRENDING"
+            elif signal.max_loss_percentage > 2:
+                return "VOLATILE"
+            else:
+                return "SIDEWAYS"
+        except:
+            return "UNKNOWN"
         
     def get_active_signals_summary(self) -> Dict:
         """Aktif sinyallerin özeti"""

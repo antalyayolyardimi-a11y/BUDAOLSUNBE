@@ -32,6 +32,7 @@ class TelegramBot:
             self.application.add_handler(CommandHandler("help", self.help_command))
             self.application.add_handler(CommandHandler("status", self.status_command))
             self.application.add_handler(CommandHandler("stats", self.stats_command))
+            self.application.add_handler(CommandHandler("aireport", self.ai_report_command))  # AI rapor komutu
             self.application.add_handler(CommandHandler("stop", self.stop_command))
             self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
             
@@ -91,7 +92,14 @@ Chat ID'niz: `{chat_id}`
 /help - Bu yardım menüsünü göster
 /status - Bot'un mevcut durumunu görüntüle
 /stats - Performans istatistiklerini görüntüle
+/aireport - 🤖 AI Optimizer performans raporu
 /stop - Sinyal almayı durdur
+
+**AI Özellikleri:**
+🤖 Otomatik parametre optimizasyonu
+📊 Başarı oranı takibi
+🎯 Akıllı sinyal filtreleme
+📈 Strateji analizi
 
 **Sinyal Formatı:**
 🔴/🟢 Sinyal Türü (LONG/SHORT)
@@ -266,6 +274,19 @@ Bot'u kullandığınız için teşekkürler! 👋
         
         confidence = signal['confidence']
         
+        # M5 Confirmation bilgisi
+        m5_info = ""
+        if 'm5_confirmation' in signal:
+            m5_data = signal['m5_confirmation']
+            m5_score = m5_data.get('confirmation_strength', 0)
+            candle_analyses = m5_data.get('candle_analysis', [])
+            
+            m5_info = f"\n📊 **M5 ONAY: {m5_score:.0f}%** ✅"
+            if len(candle_analyses) >= 2:
+                c1_score = candle_analyses[0].get('points', 0)
+                c2_score = candle_analyses[1].get('points', 0)
+                m5_info += f"\n   🕯️ 1. Mum: {c1_score}/5 | 2. Mum: {c2_score}/5"
+        
         # Risk/Reward hesapla (yoksa hesapla)
         if 'risk_reward_ratio' in signal:
             risk_reward = signal['risk_reward_ratio']
@@ -320,7 +341,7 @@ Bot'u kullandığınız için teşekkürler! 👋
 📊 **Analiz Bilgileri:**
 • Güven Oranı: {confidence:.1f}%
 • Risk/Ödül: 1:{risk_reward:.2f}
-• Zaman: {datetime.now().strftime('%H:%M:%S')}
+• Zaman: {datetime.now().strftime('%H:%M:%S')}{m5_info}
 
 ⚠️ **Risk Uyarısı:** Bu bir yatırım tavsiyesi değildir!
         """
@@ -447,6 +468,29 @@ Bot'u kullandığınız için teşekkürler! 👋
         except Exception as e:
             self.logger.error(f"Bot durdurma hatası: {e}")
             
+    async def ai_report_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """AI Optimizer performans raporu komutu"""
+        chat_id = update.effective_chat.id
+        try:
+            # AI Optimizer import et
+            from ai_optimizer import AIOptimizer
+            
+            ai_optimizer = AIOptimizer()
+            report = ai_optimizer.generate_performance_report()
+            
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=report,
+                parse_mode='Markdown'
+            )
+            
+        except Exception as e:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"❌ AI raporu oluşturulamadı: {e}"
+            )
+            self.logger.error(f"AI rapor hatası: {e}")
+    
     def get_stats(self) -> Dict:
         """Bot istatistiklerini getir"""
         return {

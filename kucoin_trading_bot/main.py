@@ -22,7 +22,8 @@ from src.technical_analysis import generate_trading_signal
 from src.telegram_bot import TelegramBot
 from src.signal_tracker import SignalTracker
 from src.signal_validator import SignalValidator
-# ai_optimizer kaldırıldı - SMC strategy kullanıyor
+from src.ai_optimizer import AIOptimizer  # AI Optimizer eklendi!
+from src.m5_confirmation import M5ConfirmationSystem  # M5 onay sistemi
 
 class TradingBot:
     def __init__(self):
@@ -34,7 +35,8 @@ class TradingBot:
         self.telegram_bot = None
         self.signal_tracker = None
         self.signal_validator = None
-        # ai_optimizer kaldırıldı
+        self.ai_optimizer = None  # AI Optimizer eklendi!
+        self.m5_confirmation = None  # M5 onay sistemi
         
         # Bot durumu
         self.is_running = False
@@ -57,7 +59,12 @@ class TradingBot:
             # API ve bileşenleri başlat
             self.kucoin_api = KuCoinAPI(self.config)
             # technical_analyzer artık function olarak kullanılıyor
-            # ai_optimizer kaldırıldı - SMC strategy kullanıyor
+            
+            # AI Optimizer'ı başlat
+            self.ai_optimizer = AIOptimizer()
+            
+            # M5 Confirmation System'ı başlat
+            self.m5_confirmation = M5ConfirmationSystem()
             
             # Telegram bot'u başlat
             self.telegram_bot = TelegramBot(self.config)
@@ -74,8 +81,9 @@ class TradingBot:
             
             # Kayıtlı verileri yükle
             self.signal_tracker.load_signals()
-            # ai_optimizer.load_performance_data() kaldırıldı
             
+            self.logger.info("🤖 AI Optimizer başlatıldı")
+            self.logger.info("📊 M5 Confirmation System başlatıldı")
             self.logger.info("Trading bot başarıyla başlatıldı")
             return True
             
@@ -201,7 +209,7 @@ class TradingBot:
                     
                     print(f"  📈 [{coins_analyzed}/{max_coins_to_analyze}] {symbol} analiz ediliyor...")
                     
-                    # Teknik analiz ve sinyal üret (yeni SMC stratejisi)
+                    # Teknik analiz ve sinyal üret (M15'te SMC stratejisi)
                     signal = generate_trading_signal(symbol, self.kucoin_api)
                     if signal and signal['signal'] != 'HOLD':
                         # Symbol'ü signal'e ekle
@@ -212,25 +220,48 @@ class TradingBot:
                         print(f"       💪 Güven: {signal['confidence']:.1f}%")
                         print(f"       ⚡ Strateji: {signal['reason']}")
                         
-                        # AI tahmin kontrolü (opsiyonel)
-                        # if self.ai_optimizer.is_trained:
-                        #     success_probability = self.ai_optimizer.predict_signal_success(signal)
-                        #     if success_probability and success_probability < 0.6:
-                        #         print(f"       🤖 AI tahmin düşük: {success_probability:.2f} - GEÇİLDİ")
+                        # 🚨 YENİ: M5 Onay Sistemi
+                        print(f"       📊 M5'te 2 mum onay bekleniyor...")
+                        m5_confirmation = await self.m5_confirmation.confirm_signal_on_m5(
+                            symbol, signal, self.kucoin_api
+                        )
                         
-                        # Hızlı validation
-                        print(f"       🔍 Hızlı doğrulama yapılıyor...")
-                        validation_result = await self.signal_validator.quick_validate_signal(signal)
-                        
-                        if validation_result['is_validated']:
-                            signal['confidence'] += validation_result['confidence_boost']
-                            signal['validation_result'] = validation_result
-                            potential_signals.append(signal)
+                        if m5_confirmation['confirmed']:
+                            # M5 onayı başarılı
+                            signal['m5_confirmation'] = m5_confirmation
+                            signal['entry_price'] = m5_confirmation['final_entry_price']  # M5'ten gelen entry price
+                            signal['confidence'] += 10  # M5 onayı bonus
                             
-                            print(f"       ✅ Doğrulandı! Yeni güven: {signal['confidence']:.1f}%")
-                            print(f"       📋 Sebep: {validation_result['reason']}")
+                            print(f"       ✅ M5 ONAYI BAŞARILI! ({m5_confirmation['confirmation_strength']:.0f}%)")
+                            print(f"       📈 Yeni Entry: ${m5_confirmation['final_entry_price']:.6f}")
+                            
+                            # Mum analizlerini göster
+                            for candle_analysis in m5_confirmation['candle_analysis']:
+                                print(f"          🕯️ {candle_analysis['candle']}: {candle_analysis['points']}/5 puan")
+                                for detail in candle_analysis['details']:
+                                    print(f"             {detail}")
+                            
+                            # Hızlı validation (M15 bazlı)
+                            print(f"       🔍 Hızlı doğrulama yapılıyor...")
+                            validation_result = await self.signal_validator.quick_validate_signal(signal)
+                            
+                            if validation_result['is_validated']:
+                                signal['confidence'] += validation_result['confidence_boost']
+                                signal['validation_result'] = validation_result
+                                potential_signals.append(signal)
+                                
+                                print(f"       ✅ Final doğrulama OK! Toplam güven: {signal['confidence']:.1f}%")
+                                print(f"       📋 Sebep: {validation_result['reason']}")
+                            else:
+                                print(f"       ❌ Final doğrulama başarısız: {validation_result['reason']}")
                         else:
-                            print(f"       ❌ Doğrulanamadı: {validation_result['reason']}")
+                            # M5 onayı başarısız
+                            print(f"       ❌ M5 ONAYI BAŞARISIZ: {m5_confirmation['reason']}")
+                            print(f"       📊 Onay gücü: {m5_confirmation['confirmation_strength']:.0f}% (min %60 gerekli)")
+                            
+                            # Mum analizlerini göster (hata ayıklama için)
+                            for candle_analysis in m5_confirmation['candle_analysis']:
+                                print(f"          🕯️ {candle_analysis['candle']}: {candle_analysis['points']}/5 puan")
                     else:
                         # Neden sinyal üretilmediğini açıkla
                         print(f"    ⚪ {symbol} - {signal['reason'] if signal else 'Veri alınamadı'}")
@@ -382,6 +413,15 @@ class TradingBot:
                 print(f"   ❌ Final güven düşük: {signal['confidence']:.1f}% < 70%")
                 self.logger.info(f"Final güven düşük: {signal['symbol']} - {signal['confidence']:.1f}%")
                 return
+            
+            # 🤖 AI Optimizer filtresi
+            should_send, ai_reason = self.ai_optimizer.should_send_signal(signal)
+            if not should_send:
+                print(f"   🤖 AI filtresi engelliyor: {ai_reason}")
+                self.logger.info(f"AI filtresi: {signal['symbol']} - {ai_reason}")
+                return
+            else:
+                print(f"   🤖 AI onayı: {ai_reason}")
                 
             # Telegram'a gönder
             print(f"   📤 Telegram'a gönderiliyor...")

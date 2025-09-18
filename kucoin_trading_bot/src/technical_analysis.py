@@ -121,25 +121,49 @@ def generate_trading_signal(symbol: str, kucoin_api) -> Dict:
                 "timestamp": datetime.now()
             }
         
-        # Calculate risk levels
+        # Calculate risk levels with proper TP/SL ratios
         signal_type = best_signal["signal"]
         entry_price = best_signal["entry_price"]
         
+        # Dynamic risk/reward calculation based on volatility
+        volatility = np.std(m15_data['close'].tail(20)) / np.mean(m15_data['close'].tail(20))
+        base_risk_percent = max(0.015, min(0.05, volatility * 2))  # 1.5% - 5% risk
+        
         if signal_type == "LONG":
-            stop_loss = entry_price * 0.98
-            take_profit = entry_price * 1.02
-        else:
-            stop_loss = entry_price * 1.02
-            take_profit = entry_price * 0.98
+            stop_loss = entry_price * (1 - base_risk_percent)
+            # Progressive take profits
+            tp1 = entry_price * (1 + base_risk_percent * 1.5)    # 1:1.5 R/R
+            tp2 = entry_price * (1 + base_risk_percent * 2.5)    # 1:2.5 R/R  
+            tp3 = entry_price * (1 + base_risk_percent * 4.0)    # 1:4 R/R
+        else:  # SHORT
+            stop_loss = entry_price * (1 + base_risk_percent)
+            # Progressive take profits for SHORT
+            tp1 = entry_price * (1 - base_risk_percent * 1.5)    # 1:1.5 R/R
+            tp2 = entry_price * (1 - base_risk_percent * 2.5)    # 1:2.5 R/R
+            tp3 = entry_price * (1 - base_risk_percent * 4.0)    # 1:4 R/R
+        
+        # Calculate actual risk/reward ratio
+        risk = abs(entry_price - stop_loss)
+        reward = abs(entry_price - tp1)
+        risk_reward_ratio = reward / risk if risk > 0 else 1.0
         
         return {
             "signal": signal_type,
             "confidence": best_signal["strength"],
             "entry_price": round(entry_price, 6),
             "stop_loss": round(stop_loss, 6),
-            "take_profit_1": round(take_profit, 6),
+            "take_profit_1": round(tp1, 6),
+            "take_profit_2": round(tp2, 6),
+            "take_profit_3": round(tp3, 6),
+            "take_profits": {
+                "tp1": round(tp1, 6),
+                "tp2": round(tp2, 6), 
+                "tp3": round(tp3, 6)
+            },
+            "risk_reward_ratio": round(risk_reward_ratio, 2),
+            "volatility": round(volatility * 100, 2),
             "reason": f"{best_signal["type"]} Strategy",
-            "analysis": f"🎯 {best_signal["type"]} {signal_type}\n💪 Strength: {best_signal["strength"]:.1f}\n⚡ ADX: {adx_signal["adx"]:.1f}",
+            "analysis": f"🎯 {best_signal["type"]} {signal_type}\n💪 Strength: {best_signal["strength"]:.1f}\n⚡ ADX: {adx_signal["adx"]:.1f}\n📊 R/R: 1:{risk_reward_ratio:.1f}",
             "timestamp": datetime.now(),
             "strength": best_signal["strength"]
         }
