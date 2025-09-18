@@ -133,7 +133,7 @@ class KuCoinAPI:
             self.logger.error(f"24hr stats alınamadı: {response}")
             return []
             
-    def get_high_volume_coins(self, min_volume_usdt: float = 100000) -> List[Dict]:
+    def get_high_volume_coins(self, min_volume_usdt: float = 5000000) -> List[Dict]:
         """Hacmi yüksek coinleri getir"""
         stats = self.get_24hr_stats()
         symbols = self.get_market_symbols()

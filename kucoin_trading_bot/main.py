@@ -227,16 +227,20 @@ class TradingBot:
             # En iyi sinyalleri bul
             potential_signals = []
             coins_analyzed = 0
-            max_coins_to_analyze = min(30, len(high_volume_coins))
+            max_coins_to_analyze = min(50, len(high_volume_coins))  # 🚀 İLK 50 COİN HIZLI ANALİZ
             
-            print(f"🎯 İlk {max_coins_to_analyze} coin analiz ediliyor...")
+            print(f"🎯 İlk {max_coins_to_analyze} coin analiz ediliyor (5M+ hacim)...")
             
-            for coin in high_volume_coins[:max_coins_to_analyze]:
+            for coin in high_volume_coins[:max_coins_to_analyze]:  # 🚀 İLK 50 COİNİ TARA
                 try:
                     symbol = coin['symbol']
                     coins_analyzed += 1
                     
-                    print(f"  📈 [{coins_analyzed}/{max_coins_to_analyze}] {symbol} analiz ediliyor...")
+                    # Her 10 coin'de bir progress göster
+                    if coins_analyzed % 10 == 0 or coins_analyzed <= 10:
+                        print(f"  📈 [{coins_analyzed}/{max_coins_to_analyze}] {symbol} analiz ediliyor...")
+                    elif coins_analyzed <= 30:
+                        print(f"  📈 [{coins_analyzed}/{max_coins_to_analyze}] {symbol} analiz ediliyor...")
                     
                     # Teknik analiz ve sinyal üret (M15'te SMC stratejisi)
                     signal = generate_trading_signal(symbol, self.kucoin_api)
@@ -301,9 +305,10 @@ class TradingBot:
                     continue
                     
             print(f"\n📋 Analiz özeti:")
-            print(f"   💹 Toplam coin: {len(high_volume_coins)}")
+            print(f"   💹 Toplam coin (5M+ hacim): {len(high_volume_coins)}")
             print(f"   🔍 Analiz edilen: {coins_analyzed}")
             print(f"   🎯 Potansiyel sinyal: {len(potential_signals)}")
+            print(f"   💰 Minimum hacim: $5,000,000 USDT")
             
             # En iyi sinyali seç ve gönder
             if potential_signals:
@@ -464,28 +469,31 @@ class TradingBot:
             print(f"   📤 Telegram'a gönderiliyor...")
             success = await self.telegram_bot.send_signal(signal)
             
-            if success:
-                # Signal tracker'a ekle
-                signal_id = self.signal_tracker.create_signal(signal)
+            # Signal tracker'a her durumda ekle (Telegram başarısız olsa bile takip et)
+            signal_id = self.signal_tracker.create_signal(signal)
+            
+            if signal_id:
+                self.last_signal_time = datetime.now()
+                self.signals_sent_hour += 1
                 
-                if signal_id:
-                    self.last_signal_time = datetime.now()
-                    self.signals_sent_hour += 1
-                    
+                if success:
                     print(f"   ✅ SİNYAL BAŞARIYLA GÖNDERİLDİ!")
-                    print(f"   🆔 Sinyal ID: {signal_id}")
-                    print(f"   ⏰ Zaman: {self.last_signal_time.strftime('%H:%M:%S')}")
-                    print(f"   📊 Bu saat gönderilen: {self.signals_sent_hour}/{self.config.MAX_SIGNALS_PER_HOUR}")
-                    
-                    self.logger.info(f"Sinyal gönderildi: {signal['symbol']} - ID: {signal_id}")
-                    
-                    # Uzun validation başlat (background)
-                    print(f"   🔄 Uzun süreli doğrulama başlatılıyor...")
-                    asyncio.create_task(self._long_validation(signal, signal_id))
                 else:
-                    print(f"   ❌ Signal tracker hatası")
+                    print(f"   ⚠️ Telegram başarısız ama sinyal takibe alındı!")
+                    
+                print(f"   🆔 Sinyal ID: {signal_id}")
+                print(f"   ⏰ Zaman: {self.last_signal_time.strftime('%H:%M:%S')}")
+                print(f"   📊 Bu saat gönderilen: {self.signals_sent_hour}/{self.config.MAX_SIGNALS_PER_HOUR}")
+                
+                self.logger.info(f"Sinyal oluşturuldu: {signal['symbol']} - ID: {signal_id} - Telegram: {success}")
+                
+                # Uzun validation başlat (background)
+                print(f"   🔄 Uzun süreli doğrulama başlatılıyor...")
+                asyncio.create_task(self._long_validation(signal, signal_id))
             else:
-                print(f"   ❌ Telegram gönderimi başarısız")
+                print(f"   ❌ Signal tracker hatası")
+                if success:
+                    print(f"   ❌ Telegram gönderildi ama takip başlatılamadı!")
                     
         except Exception as e:
             print(f"   ❌ Sinyal gönderme hatası: {e}")
@@ -520,14 +528,35 @@ class TradingBot:
         print("📊 Sinyal takip döngüsü başlatıldı")
         self.logger.info("Sinyal takip döngüsü başlatıldı")
         
+        last_update_count = 0
+        update_interval = 0
+        
         while self.is_running:
             try:
                 # Aktif sinyalleri kontrol et
-                if self.signal_tracker.active_signals:
-                    print(f"\n📈 {len(self.signal_tracker.active_signals)} aktif sinyal güncelleniyor...")
+                active_count = len(self.signal_tracker.active_signals)
+                
+                if active_count > 0:
+                    # Her 5 dakikada bir detaylı bilgi göster
+                    if update_interval % 10 == 0:  # 30 * 10 = 5 dakika
+                        print(f"\n📈 {active_count} aktif sinyal takip ediliyor...")
+                        
+                        # Sinyal durumlarını özetle
+                        symbols = [signal.symbol for signal in self.signal_tracker.active_signals.values()]
+                        print(f"   🪙 Takip edilen coinler: {', '.join(symbols[:5])}" + 
+                              (f" +{len(symbols)-5} daha" if len(symbols) > 5 else ""))
                     
+                    # Sinyal durumu değişirse bildir
+                    if active_count != last_update_count:
+                        if active_count > last_update_count:
+                            print(f"🔔 Yeni sinyal eklendi! Toplam aktif: {active_count}")
+                        else:
+                            print(f"✅ Sinyal tamamlandı! Kalan aktif: {active_count}")
+                        last_update_count = active_count
+                
                 await self.signal_tracker.update_signal_prices()
                 await asyncio.sleep(30)  # 30 saniyede bir güncelle
+                update_interval += 1
                 
             except Exception as e:
                 print(f"❌ Sinyal takip hatası: {e}")

@@ -218,41 +218,93 @@ Bot'u kullandığınız için teşekkürler! 👋
             await update.message.reply_text("Komutlar için /help yazabilirsiniz.")
             
     async def send_signal(self, signal: Dict) -> bool:
-        """Trading sinyali gönder"""
+        """Trading sinyali gönder - Geliştirilmiş hata toleransı"""
         if not self.chat_ids:
-            self.logger.warning("Gönderilecek chat ID yok")
+            self.logger.warning("Gonderilecek chat ID yok - Lutfen /start yazin")
             return False
             
         try:
+            # 🚀 Bot bağlantısını yenile (timeout sorunlarına karşı)
+            await self._refresh_bot_connection()
+            
+            # Chat ID'leri yeniden yükle (güncellikleri yakala)
+            self.load_chat_ids()
+            
+            if not self.chat_ids:
+                self.logger.warning("Chat ID'ler yuklenmedi - Kullanici kaydi gerekli")
+                return False
+            
             # Sinyal mesajını formatla
             message = self.format_signal_message(signal)
             
-            # Tüm chat ID'lere gönder
+            # Tüm chat ID'lere gönder - timeout ile
             success_count = 0
-            for chat_id in self.chat_ids.copy():
+            failed_chats = []
+            
+            # 🚀 Her gönderim öncesi kısa bekle (rate limiting)
+            total_chats = len(self.chat_ids)
+            self.logger.info(f"Sinyal gonderiliyor: {total_chats} kullaniciya")
+            
+            for i, chat_id in enumerate(self.chat_ids.copy(), 1):
                 try:
-                    await self.bot.send_message(
-                        chat_id=chat_id,
-                        text=message,
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-                    success_count += 1
+                    # Her gönderimde kısa bekle
+                    if i > 1:
+                        await asyncio.sleep(0.5)  # 500ms bekle
+                    
+                    # 🚀 Timeout ve retry ekle
+                    max_retries = 3
+                    retry_count = 0
+                    
+                    while retry_count < max_retries:
+                        try:
+                            await asyncio.wait_for(
+                                self.bot.send_message(
+                                    chat_id=chat_id,
+                                    text=message,
+                                    parse_mode=ParseMode.MARKDOWN
+                                ),
+                                timeout=5.0  # 5 saniye timeout
+                            )
+                            success_count += 1
+                            self.logger.info(f"Sinyal gonderildi: {chat_id}")
+                            break  # Başarılı, döngüden çık
+                            
+                        except asyncio.TimeoutError:
+                            retry_count += 1
+                            if retry_count < max_retries:
+                                self.logger.warning(f"Timeout {chat_id}, deneme {retry_count}/{max_retries}")
+                                await asyncio.sleep(2)  # 2 saniye bekle ve tekrar dene
+                            else:
+                                self.logger.error(f"Timeout {chat_id}: {max_retries} deneme basarisiz")
+                                failed_chats.append(chat_id)
+                                break
                     
                 except Exception as e:
-                    self.logger.error(f"Sinyal gönderme hatası {chat_id}: {e}")
+                    error_msg = str(e).lower()
+                    self.logger.error(f"Sinyal gonderme hatasi {chat_id}: {e}")
+                    
                     # Geçersiz chat ID'yi kaldır
-                    if "chat not found" in str(e).lower():
+                    if any(err in error_msg for err in ["chat not found", "blocked", "deactivated"]):
+                        self.logger.warning(f"Gecersiz chat ID kaldirilıyor: {chat_id}")
                         self.chat_ids.discard(chat_id)
+                    else:
+                        failed_chats.append(chat_id)
                         
-            # Chat ID'leri güncelle
-            if success_count != len(self.chat_ids):
+            # Chat ID'leri güncelle (başarısızsa kaydet)
+            if len(self.chat_ids) > 0:
                 self.save_chat_ids()
                 
-            self.logger.info(f"Sinyal gönderildi: {success_count}/{len(self.chat_ids)} kullanıcı")
+            # Sonuç raporu
+            total_chats = len(self.chat_ids) + len(failed_chats)
+            if success_count > 0:
+                self.logger.info(f"Sinyal basarili: {success_count}/{total_chats} kullanici")
+            else:
+                self.logger.warning(f"Hicbir kullaniciya sinyal gonderilemedi! Chat ID kontrol edin.")
+                
             return success_count > 0
             
         except Exception as e:
-            self.logger.error(f"Sinyal gönderme genel hatası: {e}")
+            self.logger.error(f"Sinyal gonderme kritik hatasi: {e}")
             return False
             
     def format_signal_message(self, signal: Dict) -> str:
@@ -414,34 +466,98 @@ Bot'u kullandığınız için teşekkürler! 👋
             return False
             
     def load_chat_ids(self):
-        """Chat ID'leri dosyadan yükle"""
+        """Chat ID'leri dosyadan yükle - Geliştirilmiş"""
         try:
-            with open('data/chat_ids.json', 'r') as f:
-                chat_ids_data = json.load(f)
-                self.chat_ids = set(chat_ids_data.get('chat_ids', []))
-                
-            self.logger.info(f"{len(self.chat_ids)} chat ID yüklendi")
+            import os
             
-        except FileNotFoundError:
-            self.logger.info("Chat IDs dosyası bulunamadı, yeni liste oluşturuluyor")
-            self.chat_ids = set()
+            # Dizin yoksa oluştur
+            os.makedirs('data', exist_ok=True)
+            
+            # Dosya varsa yükle
+            chat_file = 'data/chat_ids.json'
+            if os.path.exists(chat_file):
+                with open(chat_file, 'r') as f:
+                    chat_ids_data = json.load(f)
+                    loaded_ids = chat_ids_data.get('chat_ids', [])
+                    
+                    # Set'e dönüştür ve mevcut ile birleştir
+                    new_ids = set(loaded_ids)
+                    if self.chat_ids:
+                        new_ids.update(self.chat_ids)
+                    self.chat_ids = new_ids
+                    
+                self.logger.info(f"Chat ID basariyla yuklendi: {len(self.chat_ids)}")
+                
+                # Yüklenen chat ID'leri hemen kaydet (güvenlik için)
+                if self.chat_ids:
+                    self.save_chat_ids()
+            else:
+                self.logger.warning("Chat IDs dosyasi bulunamadi, yeni liste olusturuluyor")
+                if not self.chat_ids:
+                    self.chat_ids = set()
+                # Boş dosya oluştur
+                self.save_chat_ids()
+                
         except Exception as e:
-            self.logger.error(f"Chat ID yükleme hatası: {e}")
-            self.chat_ids = set()
+            self.logger.error(f"❌ Chat ID yükleme hatası: {e}")
+            if not self.chat_ids:
+                self.chat_ids = set()
             
     def save_chat_ids(self):
-        """Chat ID'leri dosyaya kaydet"""
+        """Chat ID'leri dosyaya kaydet - Geliştirilmiş"""
         try:
+            import os
+            
+            # Dizin yoksa oluştur
+            os.makedirs('data', exist_ok=True)
+            
             chat_ids_data = {
                 'chat_ids': list(self.chat_ids),
-                'last_updated': datetime.now().isoformat()
+                'count': len(self.chat_ids),
+                'last_updated': datetime.now().isoformat(),
+                'bot_version': '1.0'
             }
             
-            with open('data/chat_ids.json', 'w') as f:
+            # Atomic write (temporary file kullan)
+            temp_file = 'data/chat_ids_temp.json'
+            final_file = 'data/chat_ids.json'
+            
+            with open(temp_file, 'w') as f:
                 json.dump(chat_ids_data, f, indent=2)
+            
+            # Dosyayı taşı (atomic operation)
+            os.replace(temp_file, final_file)
+                
+            self.logger.info(f"Chat ID kaydedildi: {len(self.chat_ids)}")
                 
         except Exception as e:
-            self.logger.error(f"Chat ID kaydetme hatası: {e}")
+            self.logger.error(f"Chat ID kaydetme hatasi: {e}")
+            # Temporary file'ı temizle
+            try:
+                if os.path.exists('data/chat_ids_temp.json'):
+                    os.remove('data/chat_ids_temp.json')
+            except:
+                pass
+    
+    async def _refresh_bot_connection(self):
+        """Bot bağlantısını yenile - timeout sorunlarına karşı"""
+        try:
+            # Bot instance'ını kontrol et
+            if self.bot:
+                # Basit bir test isteği gönder
+                await asyncio.wait_for(self.bot.get_me(), timeout=3.0)
+            else:
+                # Bot instance'ını yeniden oluştur
+                self.bot = self.application.bot
+                
+        except Exception as e:
+            self.logger.warning(f"Bot baglantisi yenileniyor: {e}")
+            try:
+                # Application'ı yeniden başlat
+                if self.application:
+                    self.bot = self.application.bot
+            except Exception as ex:
+                self.logger.error(f"Bot yenileme hatasi: {ex}")
             
     async def start_polling(self):
         """Bot'u polling modunda başlat"""

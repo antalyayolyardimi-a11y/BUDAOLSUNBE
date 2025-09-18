@@ -17,7 +17,7 @@ class Config:
         self.KUCOIN_SANDBOX = os.getenv('KUCOIN_SANDBOX', 'False').lower() == 'true'
         
         # Trading Parameters
-        self.MIN_VOLUME_USDT = float(os.getenv('MIN_VOLUME_USDT', 100000))
+        self.MIN_VOLUME_USDT = float(os.getenv('MIN_VOLUME_USDT', 5000000))  # 🚀 5M'a düşürüldü
         self.ANALYSIS_INTERVAL = int(os.getenv('ANALYSIS_INTERVAL', 15))
         self.VALIDATION_INTERVAL = int(os.getenv('VALIDATION_INTERVAL', 5))
         self.MAX_SIGNALS_PER_HOUR = int(os.getenv('MAX_SIGNALS_PER_HOUR', 5))
