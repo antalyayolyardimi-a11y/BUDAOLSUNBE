@@ -18,6 +18,22 @@ class AIOptimizer:
         self.optimization_history = "data/optimization_history.json"
         self.current_settings = "data/current_optimizer_settings.json"
         
+        # 🚀 Performans metriklerini takip et
+        self.optimization_history_data = []
+        self.performance_baseline = None
+        self.last_optimization_time = None
+        
+        # 📊 Parameter ranges for advanced optimization
+        self.param_ranges = {
+            'ENTRY_PRECISION': {'min': 0.4, 'max': 0.9, 'step': 0.05},
+            'TP_RATIO': {'min': 1.5, 'max': 4.0, 'step': 0.25},
+            'SL_RATIO': {'min': 0.8, 'max': 2.5, 'step': 0.1},
+            'ADX_THRESHOLD': {'min': 20.0, 'max': 35.0, 'step': 2.5},
+            'OB_SCORE_MIN': {'min': 6, 'max': 10, 'step': 1},
+            'VOLUME_THRESHOLD': {'min': 1.2, 'max': 2.5, 'step': 0.1},
+            'LIQUIDITY_SWEEP_MIN': {'min': 5, 'max': 9, 'step': 1}
+        }
+        
         # Başlangıç parametreleri
         self.min_confidence_threshold = 70.0
         self.max_signals_per_hour = 12
@@ -510,3 +526,562 @@ class AIOptimizer:
         except Exception as e:
             self.logger.error(f"M5 analizi hatası: {e}")
             return {'status': 'error', 'message': str(e)}
+    
+    # 🚀 YENİ: GELİŞMİŞ STRATEJİ OPTİMİZASYONU
+    def __init_advanced_params(self):
+        """Gelişmiş strateji parametrelerini başlat"""
+        # SMC Strategy Parameters
+        self.smc_entry_precision = 0.8  # Entry hassasiyeti (0.5-1.0)
+        self.smc_confirmation_min = 60   # M5 minimum confirmation %
+        self.smc_risk_reward_ratio = 1.5 # R/R oranı
+        
+        # Take Profit Ayarları
+        self.tp1_distance_multiplier = 1.0  # TP1 mesafe çarpanı
+        self.tp2_distance_multiplier = 2.0  # TP2 mesafe çarpanı  
+        self.tp3_distance_multiplier = 3.0  # TP3 mesafe çarpanı
+        
+        # Stop Loss Ayarları
+        self.sl_atr_multiplier = 1.5       # ATR çarpanı (1.0-3.0)
+        self.sl_percentage_max = 2.0        # Maximum SL % (1.0-5.0)
+        
+        # Order Block & FVG Ayarları
+        self.ob_strength_min = 70           # OB minimum güç
+        self.fvg_size_min = 0.5            # FVG minimum boyut %
+        
+        # Volume Analysis
+        self.volume_threshold_multiplier = 1.5  # Hacim eşik çarpanı
+        
+        # Liquidity Sweep Settings
+        self.liquidity_sweep_tolerance = 0.2    # Likidite sweep toleransı %
+        
+    def optimize_strategy_parameters(self, failed_signals: list, market_conditions: dict):
+        """
+        🤖 AI Gelişmiş Strateji Optimizasyonu
+        Başarısız sinyallere göre tüm strateji parametrelerini optimize eder
+        """
+        try:
+            self.logger.info("🤖 AI Gelişmiş Strateji Optimizasyonu başlıyor...")
+            
+            if not hasattr(self, 'smc_entry_precision'):
+                self.__init_advanced_params()
+            
+            optimizations = []
+            
+            # 1. ENTRY PRECİSİON OPTİMİZASYONU
+            entry_optimization = self._optimize_entry_precision(failed_signals)
+            if entry_optimization['changed']:
+                optimizations.append(entry_optimization)
+            
+            # 2. TAKE PROFIT OPTİMİZASYONU
+            tp_optimization = self._optimize_take_profits(failed_signals)
+            if tp_optimization['changed']:
+                optimizations.append(tp_optimization)
+            
+            # 3. STOP LOSS OPTİMİZASYONU
+            sl_optimization = self._optimize_stop_loss(failed_signals)
+            if sl_optimization['changed']:
+                optimizations.append(sl_optimization)
+            
+            # 4. SMC KONFİRMASYON OPTİMİZASYONU
+            smc_optimization = self._optimize_smc_confirmation(failed_signals)
+            if smc_optimization['changed']:
+                optimizations.append(smc_optimization)
+            
+            # 5. ORDER BLOCK & FVG OPTİMİZASYONU
+            ob_fvg_optimization = self._optimize_ob_fvg(failed_signals)
+            if ob_fvg_optimization['changed']:
+                optimizations.append(ob_fvg_optimization)
+            
+            # 6. VOLUME ANALİZ OPTİMİZASYONU
+            volume_optimization = self._optimize_volume_analysis(failed_signals)
+            if volume_optimization['changed']:
+                optimizations.append(volume_optimization)
+            
+            # 7. LİKİDİTE SWEEP OPTİMİZASYONU
+            liquidity_optimization = self._optimize_liquidity_sweep(failed_signals)
+            if liquidity_optimization['changed']:
+                optimizations.append(liquidity_optimization)
+            
+            # Tüm optimizasyonları kaydet
+            if optimizations:
+                self._save_advanced_settings()
+                
+                optimization_summary = {
+                    'timestamp': datetime.now().isoformat(),
+                    'total_failed_signals': len(failed_signals),
+                    'optimizations_applied': len(optimizations),
+                    'optimizations': optimizations,
+                    'market_conditions': market_conditions
+                }
+                
+                self._save_optimization_log(optimization_summary)
+                
+                self.logger.info(f"🤖 AI {len(optimizations)} parametre optimizasyonu uyguladı!")
+                
+                return {
+                    'success': True,
+                    'optimizations_count': len(optimizations),
+                    'optimizations': optimizations,
+                    'message': f"AI {len(optimizations)} strateji parametresini optimize etti!"
+                }
+            else:
+                self.logger.info("🤖 AI mevcut parametrelerin optimal olduğunu belirledi")
+                return {
+                    'success': True,
+                    'optimizations_count': 0,
+                    'message': "Mevcut parametreler optimal durumda"
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Gelişmiş optimizasyon hatası: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _optimize_entry_precision(self, failed_signals: list) -> dict:
+        """Entry precision optimizasyonu"""
+        try:
+            early_entries = [s for s in failed_signals if 'early_entry' in s.get('failure_reason', '')]
+            late_entries = [s for s in failed_signals if 'late_entry' in s.get('failure_reason', '')]
+            
+            old_precision = self.smc_entry_precision
+            
+            if len(early_entries) > len(late_entries):
+                # Çok erken giriş yapıyoruz, hassasiyeti artır
+                self.smc_entry_precision = min(1.0, self.smc_entry_precision + 0.1)
+            elif len(late_entries) > len(early_entries):
+                # Çok geç giriş yapıyoruz, hassasiyeti azalt
+                self.smc_entry_precision = max(0.5, self.smc_entry_precision - 0.1)
+            
+            return {
+                'parameter': 'entry_precision',
+                'old_value': old_precision,
+                'new_value': self.smc_entry_precision,
+                'changed': old_precision != self.smc_entry_precision,
+                'reason': f"Early entries: {len(early_entries)}, Late entries: {len(late_entries)}"
+            }
+            
+        except Exception as e:
+            return {'parameter': 'entry_precision', 'error': str(e), 'changed': False}
+    
+    def _optimize_take_profits(self, failed_signals: list) -> dict:
+        """Take Profit optimizasyonu"""
+        try:
+            tp_missed = [s for s in failed_signals if 'tp_missed' in s.get('failure_reason', '')]
+            tp_too_close = [s for s in failed_signals if 'tp_too_close' in s.get('failure_reason', '')]
+            
+            old_tp1 = self.tp1_distance_multiplier
+            old_tp2 = self.tp2_distance_multiplier
+            old_tp3 = self.tp3_distance_multiplier
+            
+            if len(tp_missed) > 3:
+                # TP'ler çok uzak, yakınlaştır
+                self.tp1_distance_multiplier = max(0.8, self.tp1_distance_multiplier - 0.1)
+                self.tp2_distance_multiplier = max(1.5, self.tp2_distance_multiplier - 0.2)
+                self.tp3_distance_multiplier = max(2.0, self.tp3_distance_multiplier - 0.3)
+            elif len(tp_too_close) > 3:
+                # TP'ler çok yakın, uzaklaştır
+                self.tp1_distance_multiplier = min(1.5, self.tp1_distance_multiplier + 0.1)
+                self.tp2_distance_multiplier = min(3.0, self.tp2_distance_multiplier + 0.2)
+                self.tp3_distance_multiplier = min(4.0, self.tp3_distance_multiplier + 0.3)
+            
+            changed = (old_tp1 != self.tp1_distance_multiplier or 
+                      old_tp2 != self.tp2_distance_multiplier or 
+                      old_tp3 != self.tp3_distance_multiplier)
+            
+            return {
+                'parameter': 'take_profits',
+                'old_values': {'tp1': old_tp1, 'tp2': old_tp2, 'tp3': old_tp3},
+                'new_values': {'tp1': self.tp1_distance_multiplier, 'tp2': self.tp2_distance_multiplier, 'tp3': self.tp3_distance_multiplier},
+                'changed': changed,
+                'reason': f"TP missed: {len(tp_missed)}, TP too close: {len(tp_too_close)}"
+            }
+            
+        except Exception as e:
+            return {'parameter': 'take_profits', 'error': str(e), 'changed': False}
+    
+    def _optimize_stop_loss(self, failed_signals: list) -> dict:
+        """Stop Loss optimizasyonu"""
+        try:
+            sl_hit = [s for s in failed_signals if 'stop_loss_hit' in s.get('failure_reason', '')]
+            sl_too_tight = [s for s in failed_signals if 'sl_too_tight' in s.get('failure_reason', '')]
+            
+            old_atr = self.sl_atr_multiplier
+            old_max = self.sl_percentage_max
+            
+            if len(sl_hit) > 5:
+                # SL çok dar, genişlet
+                self.sl_atr_multiplier = min(3.0, self.sl_atr_multiplier + 0.2)
+                self.sl_percentage_max = min(5.0, self.sl_percentage_max + 0.3)
+            elif len(sl_too_tight) > 3:
+                # SL çok geniş, daralt
+                self.sl_atr_multiplier = max(1.0, self.sl_atr_multiplier - 0.1)
+                self.sl_percentage_max = max(1.0, self.sl_percentage_max - 0.2)
+            
+            changed = (old_atr != self.sl_atr_multiplier or old_max != self.sl_percentage_max)
+            
+            return {
+                'parameter': 'stop_loss',
+                'old_values': {'atr_multiplier': old_atr, 'max_percentage': old_max},
+                'new_values': {'atr_multiplier': self.sl_atr_multiplier, 'max_percentage': self.sl_percentage_max},
+                'changed': changed,
+                'reason': f"SL hit: {len(sl_hit)}, SL too tight: {len(sl_too_tight)}"
+            }
+            
+        except Exception as e:
+            return {'parameter': 'stop_loss', 'error': str(e), 'changed': False}
+    
+    def _optimize_smc_confirmation(self, failed_signals: list) -> dict:
+        """SMC Confirmation optimizasyonu"""
+        try:
+            weak_confirmation = [s for s in failed_signals if s.get('m5_confirmation_score', 100) < 60]
+            
+            old_min = self.smc_confirmation_min
+            old_rr = self.smc_risk_reward_ratio
+            
+            if len(weak_confirmation) > 3:
+                # Zayıf konfirmasyonlar çok, eşikleri artır
+                self.smc_confirmation_min = min(80, self.smc_confirmation_min + 5)
+                self.smc_risk_reward_ratio = min(2.5, self.smc_risk_reward_ratio + 0.1)
+            
+            changed = (old_min != self.smc_confirmation_min or old_rr != self.smc_risk_reward_ratio)
+            
+            return {
+                'parameter': 'smc_confirmation',
+                'old_values': {'min_confirmation': old_min, 'risk_reward': old_rr},
+                'new_values': {'min_confirmation': self.smc_confirmation_min, 'risk_reward': self.smc_risk_reward_ratio},
+                'changed': changed,
+                'reason': f"Weak confirmations: {len(weak_confirmation)}"
+            }
+            
+        except Exception as e:
+            return {'parameter': 'smc_confirmation', 'error': str(e), 'changed': False}
+    
+    def _optimize_ob_fvg(self, failed_signals: list) -> dict:
+        """Order Block & FVG optimizasyonu"""
+        try:
+            weak_ob = [s for s in failed_signals if 'weak_order_block' in s.get('failure_reason', '')]
+            small_fvg = [s for s in failed_signals if 'small_fvg' in s.get('failure_reason', '')]
+            
+            old_ob = self.ob_strength_min
+            old_fvg = self.fvg_size_min
+            
+            if len(weak_ob) > 2:
+                self.ob_strength_min = min(90, self.ob_strength_min + 5)
+            
+            if len(small_fvg) > 2:
+                self.fvg_size_min = min(1.0, self.fvg_size_min + 0.1)
+            
+            changed = (old_ob != self.ob_strength_min or old_fvg != self.fvg_size_min)
+            
+            return {
+                'parameter': 'ob_fvg',
+                'old_values': {'ob_strength': old_ob, 'fvg_size': old_fvg},
+                'new_values': {'ob_strength': self.ob_strength_min, 'fvg_size': self.fvg_size_min},
+                'changed': changed,
+                'reason': f"Weak OB: {len(weak_ob)}, Small FVG: {len(small_fvg)}"
+            }
+            
+        except Exception as e:
+            return {'parameter': 'ob_fvg', 'error': str(e), 'changed': False}
+    
+    def _optimize_volume_analysis(self, failed_signals: list) -> dict:
+        """Volume Analysis optimizasyonu"""
+        try:
+            low_volume = [s for s in failed_signals if 'low_volume' in s.get('failure_reason', '')]
+            
+            old_volume = self.volume_threshold_multiplier
+            
+            if len(low_volume) > 4:
+                # Düşük hacim çok, eşiği artır
+                self.volume_threshold_multiplier = min(3.0, self.volume_threshold_multiplier + 0.2)
+            
+            changed = old_volume != self.volume_threshold_multiplier
+            
+            return {
+                'parameter': 'volume_analysis',
+                'old_value': old_volume,
+                'new_value': self.volume_threshold_multiplier,
+                'changed': changed,
+                'reason': f"Low volume signals: {len(low_volume)}"
+            }
+            
+        except Exception as e:
+            return {'parameter': 'volume_analysis', 'error': str(e), 'changed': False}
+    
+    def _optimize_liquidity_sweep(self, failed_signals: list) -> dict:
+        """Liquidity Sweep optimizasyonu"""
+        try:
+            false_sweeps = [s for s in failed_signals if 'false_liquidity_sweep' in s.get('failure_reason', '')]
+            
+            old_tolerance = self.liquidity_sweep_tolerance
+            
+            if len(false_sweeps) > 2:
+                # Yanlış sweep'ler çok, toleransı azalt
+                self.liquidity_sweep_tolerance = max(0.1, self.liquidity_sweep_tolerance - 0.05)
+            
+            changed = old_tolerance != self.liquidity_sweep_tolerance
+            
+            return {
+                'parameter': 'liquidity_sweep',
+                'old_value': old_tolerance,
+                'new_value': self.liquidity_sweep_tolerance,
+                'changed': changed,
+                'reason': f"False sweeps: {len(false_sweeps)}"
+            }
+            
+        except Exception as e:
+            return {'parameter': 'liquidity_sweep', 'error': str(e), 'changed': False}
+    
+    def _save_advanced_settings(self):
+        """Gelişmiş ayarları kaydet"""
+        try:
+            if not hasattr(self, 'smc_entry_precision'):
+                return
+                
+            advanced_settings = {
+                # Ana parametreler
+                'min_confidence_threshold': self.min_confidence_threshold,
+                'max_signals_per_hour': self.max_signals_per_hour,
+                'risk_reward_min': self.risk_reward_min,
+                'adx_threshold': self.adx_threshold,
+                'volume_multiplier': self.volume_multiplier,
+                
+                # Gelişmiş SMC parametreleri
+                'smc_entry_precision': self.smc_entry_precision,
+                'smc_confirmation_min': self.smc_confirmation_min,
+                'smc_risk_reward_ratio': self.smc_risk_reward_ratio,
+                
+                # Take Profit ayarları
+                'tp1_distance_multiplier': self.tp1_distance_multiplier,
+                'tp2_distance_multiplier': self.tp2_distance_multiplier,
+                'tp3_distance_multiplier': self.tp3_distance_multiplier,
+                
+                # Stop Loss ayarları
+                'sl_atr_multiplier': self.sl_atr_multiplier,
+                'sl_percentage_max': self.sl_percentage_max,
+                
+                # Order Block & FVG
+                'ob_strength_min': self.ob_strength_min,
+                'fvg_size_min': self.fvg_size_min,
+                
+                # Volume & Liquidity
+                'volume_threshold_multiplier': self.volume_threshold_multiplier,
+                'liquidity_sweep_tolerance': self.liquidity_sweep_tolerance,
+                
+                'last_updated': datetime.now().isoformat()
+            }
+            
+            with open(self.current_settings, 'w', encoding='utf-8') as f:
+                json.dump(advanced_settings, f, indent=2, ensure_ascii=False)
+                
+            self.logger.info("🤖 Gelişmiş AI ayarları kaydedildi")
+            
+        except Exception as e:
+            self.logger.error(f"Gelişmiş ayarları kaydetme hatası: {e}")
+    
+    def get_optimized_parameters(self) -> dict:
+        """Optimize edilmiş parametreleri döndür"""
+        if not hasattr(self, 'smc_entry_precision'):
+            self.__init_advanced_params()
+            
+        return {
+            'smc': {
+                'entry_precision': self.smc_entry_precision,
+                'confirmation_min': self.smc_confirmation_min,
+                'risk_reward_ratio': self.smc_risk_reward_ratio
+            },
+            'take_profits': {
+                'tp1_multiplier': self.tp1_distance_multiplier,
+                'tp2_multiplier': self.tp2_distance_multiplier,
+                'tp3_multiplier': self.tp3_distance_multiplier
+            },
+            'stop_loss': {
+                'atr_multiplier': self.sl_atr_multiplier,
+                'max_percentage': self.sl_percentage_max
+            },
+            'order_blocks': {
+                'strength_min': self.ob_strength_min,
+                'fvg_size_min': self.fvg_size_min
+            },
+            'volume': {
+                'threshold_multiplier': self.volume_threshold_multiplier
+            },
+            'liquidity': {
+                'sweep_tolerance': self.liquidity_sweep_tolerance
+            },
+            'general': {
+                'adx_threshold': self.adx_threshold,
+                'confidence_min': self.min_confidence_threshold,
+                'volume_multiplier': self.volume_multiplier
+            }
+        }
+    
+    def _save_optimization_log(self, optimization_data: dict):
+        """Optimizasyon logunu kaydet"""
+        try:
+            log_file = "data/ai_optimization_log.json"
+            
+            # Mevcut logu oku
+            if os.path.exists(log_file):
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    logs = json.load(f)
+            else:
+                logs = []
+            
+            # Yeni log ekle
+            logs.append(optimization_data)
+            
+            # Son 100 log kayıt tut
+            if len(logs) > 100:
+                logs = logs[-100:]
+            
+            # Kaydet
+            with open(log_file, 'w', encoding='utf-8') as f:
+                json.dump(logs, f, indent=2, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"Optimizasyon logu kaydetme hatası: {e}")
+    
+    # 🚀 PERFORMANS TAKİP SİSTEMİ
+    def get_performance_metrics(self, failed_signals):
+        """Başarısız sinyallerden performans metrikleri hesapla"""
+        try:
+            if not failed_signals:
+                return {
+                    'success_rate': 100.0,
+                    'avg_failure_score': 0.0,
+                    'dominant_failure_types': [],
+                    'symbol_performance': {},
+                    'timeframe_performance': {},
+                    'optimization_priority': 'maintain'
+                }
+            
+            # 📊 Temel metrikler
+            total_signals = len(failed_signals)
+            failure_types = [signal.get('failure_reason', 'unknown') for signal in failed_signals]
+            failure_scores = [signal.get('confidence_score', 0) for signal in failed_signals]
+            
+            # 🎯 Dominant hata tipleri
+            from collections import Counter
+            failure_counter = Counter(failure_types)
+            dominant_failures = failure_counter.most_common(3)
+            
+            # 📈 Sembol bazında performans
+            symbol_performance = {}
+            for signal in failed_signals:
+                symbol = signal.get('symbol', 'unknown')
+                if symbol not in symbol_performance:
+                    symbol_performance[symbol] = {'count': 0, 'avg_score': 0}
+                symbol_performance[symbol]['count'] += 1
+                symbol_performance[symbol]['avg_score'] += signal.get('confidence_score', 0)
+            
+            # Ortalama skorları hesapla
+            for symbol in symbol_performance:
+                if symbol_performance[symbol]['count'] > 0:
+                    symbol_performance[symbol]['avg_score'] /= symbol_performance[symbol]['count']
+            
+            # ⏰ Zaman bazında performans
+            timeframe_performance = {}
+            for signal in failed_signals:
+                timestamp = signal.get('timestamp', datetime.now())
+                if isinstance(timestamp, str):
+                    timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                hour = timestamp.hour
+                
+                if hour not in timeframe_performance:
+                    timeframe_performance[hour] = 0
+                timeframe_performance[hour] += 1
+            
+            return {
+                'success_rate': max(0, 100 - (total_signals * 10)),  # Her başarısız sinyal %10 düşürür
+                'avg_failure_score': sum(failure_scores) / len(failure_scores) if failure_scores else 0,
+                'dominant_failure_types': [f[0] for f in dominant_failures],
+                'symbol_performance': symbol_performance,
+                'timeframe_performance': timeframe_performance,
+                'optimization_priority': self._determine_optimization_priority(failure_counter)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Performans metrikleri hesaplama hatası: {e}")
+            return {
+                'success_rate': 50.0,
+                'avg_failure_score': 50.0,
+                'dominant_failure_types': ['calculation_error'],
+                'symbol_performance': {},
+                'timeframe_performance': {},
+                'optimization_priority': 'high'
+            }
+    
+    def _determine_optimization_priority(self, failure_counter):
+        """Hata sayısına göre optimizasyon önceliği belirle"""
+        total_failures = sum(failure_counter.values())
+        
+        if total_failures >= 20:
+            return 'critical'
+        elif total_failures >= 10:
+            return 'high'
+        elif total_failures >= 5:
+            return 'medium'
+        else:
+            return 'low'
+    
+    def save_optimization_result(self, optimization_type, old_params, new_params, performance_improvement):
+        """Optimizasyon sonucunu kaydet"""
+        try:
+            result = {
+                'timestamp': datetime.now().isoformat(),
+                'optimization_type': optimization_type,
+                'old_parameters': old_params,
+                'new_parameters': new_params,
+                'performance_improvement': performance_improvement,
+                'applied': True
+            }
+            
+            self.optimization_history_data.append(result)
+            
+            # Dosyaya kaydet
+            os.makedirs('data', exist_ok=True)
+            with open(self.optimization_history, 'w') as f:
+                json.dump(self.optimization_history_data, f, indent=2)
+                
+            self.logger.info(f"✅ {optimization_type} optimizasyonu kaydedildi")
+            
+        except Exception as e:
+            self.logger.error(f"Optimizasyon sonucu kaydetme hatası: {e}")
+    
+    def get_optimization_recommendations(self, performance_metrics):
+        """Performans metriklerine göre optimizasyon önerileri"""
+        recommendations = []
+        
+        priority = performance_metrics.get('optimization_priority', 'low')
+        dominant_failures = performance_metrics.get('dominant_failure_types', [])
+        success_rate = performance_metrics.get('success_rate', 100)
+        
+        if success_rate < 50:
+            recommendations.append({
+                'type': 'critical',
+                'action': 'comprehensive_optimization',
+                'reason': f'Başarı oranı çok düşük: %{success_rate:.1f}'
+            })
+        
+        if 'low_confidence' in dominant_failures:
+            recommendations.append({
+                'type': 'entry_precision',
+                'action': 'increase_precision_threshold',
+                'reason': 'Düşük güven skorlu sinyaller dominant'
+            })
+        
+        if 'market_volatility' in dominant_failures:
+            recommendations.append({
+                'type': 'risk_management',
+                'action': 'adjust_stop_loss',
+                'reason': 'Piyasa volatilitesi yüksek'
+            })
+        
+        if 'volume_insufficient' in dominant_failures:
+            recommendations.append({
+                'type': 'volume_analysis',
+                'action': 'increase_volume_threshold',
+                'reason': 'Yetersiz volume sinyalleri'
+            })
+        
+        return recommendations

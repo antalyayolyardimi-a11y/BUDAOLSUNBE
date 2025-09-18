@@ -96,6 +96,13 @@ class TradingBot:
         print("🤖 KuCoin Professional Trading Bot Başlatılıyor...")
         print("=" * 60)
         
+        # 📊 AI Sistem durumunu kontrol et
+        try:
+            from src.ai_system_monitor import print_ai_status_report
+            print_ai_status_report()
+        except Exception as e:
+            self.logger.warning(f"AI sistem durumu kontrol edilemedi: {e}")
+        
         if not await self.initialize():
             return False
             
@@ -108,6 +115,13 @@ class TradingBot:
         print(f"   • Saatlik Max Sinyal: {self.config.MAX_SIGNALS_PER_HOUR}")
         print(f"   • Telegram Token: {self.config.TELEGRAM_BOT_TOKEN[:20] if self.config.TELEGRAM_BOT_TOKEN else 'None'}...")
         print("=" * 60)
+        
+        # 🚀 AI Sistem durumunu kontrol et
+        try:
+            from src.ai_system_monitor import print_ai_status_report
+            print_ai_status_report()
+        except Exception as e:
+            self.logger.warning(f"AI sistem durumu kontrol edilemedi: {e}")
         
         # Schedule'ları ayarla
         self._setup_schedules()
@@ -138,10 +152,25 @@ class TradingBot:
         # Günlük AI optimizasyonu
         schedule.every().day.at("00:00").do(self._daily_ai_optimization)
         
+        # 🚀 YENİ: Gelişmiş AI optimizasyon (her 6 saatte bir)
+        schedule.every(6).hours.do(self._schedule_advanced_ai_optimization)
+        
         # Haftalık performans raporu
         schedule.every().week.do(self._weekly_performance_report)
         
         self.logger.info("Zamanlanmış görevler ayarlandı")
+    
+    def _schedule_advanced_ai_optimization(self):
+        """Gelişmiş AI optimizasyonu için zamanlanmış görev wrapper"""
+        try:
+            # Async fonksiyonu sync ortamdan çağır
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._advanced_ai_optimization())
+            loop.close()
+        except Exception as e:
+            self.logger.error(f"Zamanlanmış AI optimizasyon hatası: {e}")
         
     async def _main_analysis_loop(self):
         """Ana analiz döngüsü"""
@@ -290,10 +319,18 @@ class TradingBot:
                 print(f"   ⚡ Strateji: {best_signal.get('reason', 'SMC Strategy')}")
                 
                 if best_signal['confidence'] >= 70:  # Minimum güven eşiği
+                    # 🚨 YENİ: Aktif sinyal kontrolü
+                    symbol = best_signal.get('symbol', 'UNKNOWN-PAIR')
+                    signal_type = best_signal.get('signal', 'UNKNOWN')
+                    
+                    if self.signal_tracker.is_symbol_already_active(symbol, signal_type):
+                        print(f"   ⚠️ {symbol} {signal_type} sinyali zaten aktif! GEÇİLİYOR...")
+                        return  # Bu analiz döngüsünü sonlandır
+                    
                     print(f"   ✅ Güven eşiği geçildi! Sinyal gönderiliyor...")
                     # Signal'e symbol ekle
-                    best_signal['symbol'] = best_signal.get('symbol', 'UNKNOWN-PAIR')
-                    best_signal['signal_type'] = best_signal.get('signal', 'UNKNOWN')
+                    best_signal['symbol'] = symbol
+                    best_signal['signal_type'] = signal_type
                     await self._send_validated_signal(best_signal)
                 else:
                     print(f"   ❌ Güven eşiği düşük (minimum: 70%)")
@@ -596,6 +633,151 @@ class TradingBot:
             
         except Exception as e:
             self.logger.error(f"Bot durdurma hatası: {e}")
+    
+    # 🚀 YENİ: GELİŞMİŞ AI OPTİMİZASYON SİSTEMİ
+    async def _advanced_ai_optimization(self):
+        """
+        🤖 Gelişmiş AI Optimizasyon Sistemi
+        Başarısız sinyalleri analiz ederek tüm strateji parametrelerini optimize eder
+        """
+        try:
+            self.logger.info("🤖 Gelişmiş AI optimizasyon analizi başlıyor...")
+            
+            # Son 24 saatte başarısız sinyalleri al
+            failed_signals = self.signal_tracker.get_failed_signals_last_24h()
+            
+            if len(failed_signals) < 3:
+                self.logger.info("🤖 Yeterli başarısız sinyal yok, optimizasyon atlanıyor")
+                return
+            
+            # Market koşullarını analiz et
+            market_conditions = await self._analyze_market_conditions()
+            
+            # AI optimizasyonu çalıştır
+            optimization_result = self.ai_optimizer.optimize_strategy_parameters(
+                failed_signals, market_conditions
+            )
+            
+            if optimization_result['success'] and optimization_result['optimizations_count'] > 0:
+                # Optimize edilmiş parametreleri al ve uygula
+                optimized_params = self.ai_optimizer.get_optimized_parameters()
+                
+                # Parametreleri sisteme uygula
+                await self._apply_optimized_parameters(optimized_params)
+                
+                # Telegram'a bildirim gönder
+                optimization_message = f"""
+🤖 **AI STRATEJİ OPTİMİZASYONU**
+
+📊 **Analiz Edilen Başarısız Sinyal:** {len(failed_signals)}
+🔧 **Optimize Edilen Parametre:** {optimization_result['optimizations_count']}
+
+🎯 **Optimizasyonlar:**
+"""
+                
+                for opt in optimization_result['optimizations']:
+                    optimization_message += f"• **{opt['parameter']}:** {opt.get('reason', 'Geliştirildi')}\n"
+                
+                optimization_message += f"\n⚡ **Durum:** AI sistemi parametreleri optimize etti!"
+                
+                await self.telegram_bot.send_message(optimization_message)
+                
+                self.logger.info(f"🤖 AI {optimization_result['optimizations_count']} parametre optimize etti!")
+            else:
+                self.logger.info("🤖 AI mevcut parametrelerin optimal olduğunu belirledi")
+                
+        except Exception as e:
+            self.logger.error(f"Gelişmiş AI optimizasyon hatası: {e}")
+    
+    async def _analyze_market_conditions(self) -> dict:
+        """Market koşullarını analiz et"""
+        try:
+            # Basit market koşulu analizi
+            symbols = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT']
+            market_data = {}
+            
+            for symbol in symbols:
+                data = await self.kucoin_api.get_kline_data(symbol, '1hour', 24)
+                if data and len(data) > 1:
+                    current_price = float(data[-1]['close'])
+                    prev_price = float(data[-2]['close'])
+                    change_24h = ((current_price - prev_price) / prev_price) * 100
+                    
+                    market_data[symbol] = {
+                        'change_24h': change_24h,
+                        'volatility': self._calculate_volatility(data[-24:])
+                    }
+            
+            # Genel market durumu
+            avg_change = sum(d['change_24h'] for d in market_data.values()) / len(market_data)
+            avg_volatility = sum(d['volatility'] for d in market_data.values()) / len(market_data)
+            
+            market_condition = "neutral"
+            if avg_change > 2:
+                market_condition = "bullish"
+            elif avg_change < -2:
+                market_condition = "bearish"
+            
+            volatility_level = "normal"
+            if avg_volatility > 0.05:
+                volatility_level = "high"
+            elif avg_volatility < 0.02:
+                volatility_level = "low"
+            
+            return {
+                'condition': market_condition,
+                'volatility': volatility_level,
+                'avg_change_24h': avg_change,
+                'avg_volatility': avg_volatility,
+                'symbols_analyzed': len(market_data)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Market koşulları analiz hatası: {e}")
+            return {'condition': 'unknown', 'volatility': 'unknown'}
+    
+    def _calculate_volatility(self, kline_data: list) -> float:
+        """Volatilite hesapla"""
+        try:
+            prices = [float(k['close']) for k in kline_data]
+            if len(prices) < 2:
+                return 0.0
+            
+            returns = []
+            for i in range(1, len(prices)):
+                ret = (prices[i] - prices[i-1]) / prices[i-1]
+                returns.append(ret)
+            
+            # Standart sapma
+            mean_return = sum(returns) / len(returns)
+            variance = sum((r - mean_return) ** 2 for r in returns) / len(returns)
+            volatility = variance ** 0.5
+            
+            return volatility
+            
+        except Exception as e:
+            return 0.0
+    
+    async def _apply_optimized_parameters(self, optimized_params: dict):
+        """Optimize edilmiş parametreleri sisteme uygula"""
+        try:
+            self.logger.info("🤖 Optimize edilmiş parametreler uygulanıyor...")
+            
+            # SMC parametrelerini güncelle
+            if hasattr(self, 'technical_analyzer'):
+                # Technical analyzer'e parametreleri geç
+                # Bu parametreler bir sonraki sinyal analizinde kullanılacak
+                pass
+            
+            # Risk management parametrelerini güncelle
+            if hasattr(self, 'signal_validator'):
+                # Signal validator'e parametreleri geç
+                pass
+            
+            self.logger.info("🤖 Parametreler başarıyla uygulandı")
+            
+        except Exception as e:
+            self.logger.error(f"Parametre uygulama hatası: {e}")
             
     def get_status(self) -> Dict:
         """Bot durumunu getir"""

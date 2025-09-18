@@ -54,6 +54,13 @@ class SignalTracker:
         self.price_check_interval = 30  # saniye
         self.max_active_signals = 20
         
+    def is_symbol_already_active(self, symbol: str, signal_type: str) -> bool:
+        """Aynı symbol ve tipte aktif sinyal var mı kontrol et"""
+        for signal in self.active_signals.values():
+            if signal.symbol == symbol and signal.signal_type == signal_type and signal.status == SignalStatus.ACTIVE:
+                return True
+        return False
+        
     def create_signal(self, signal_data: Dict) -> str:
         """Yeni sinyal oluştur ve takibe başla"""
         try:
@@ -494,3 +501,183 @@ class SignalTracker:
             except Exception as e:
                 self.logger.error(f"Tracking loop hatası: {e}")
                 await asyncio.sleep(60)  # Hata durumunda 1 dakika bekle
+    
+    # 🚀 YENİ: GELİŞMİŞ AI OPTİMİZASYON İÇİN FONKSİYONLAR
+    def get_failed_signals_last_24h(self) -> List[Dict]:
+        """Son 24 saatte başarısız olan sinyalleri döndür"""
+        try:
+            failed_signals = []
+            cutoff_time = datetime.now() - timedelta(hours=24)
+            
+            # Completed signals'dan başarısızları al
+            for signal in self.completed_signals:
+                if signal.created_at >= cutoff_time:
+                    if signal.status in [SignalStatus.STOP_LOSS, SignalStatus.EXPIRED]:
+                        # Başarısız sinyal verisi hazırla
+                        failed_data = {
+                            'signal_id': signal.signal_id,
+                            'symbol': signal.symbol,
+                            'signal_type': signal.signal_type,
+                            'entry_price': signal.entry_price,
+                            'stop_loss': signal.stop_loss,
+                            'tp1': signal.tp1,
+                            'tp2': signal.tp2,
+                            'tp3': signal.tp3,
+                            'final_price': signal.current_price,
+                            'max_profit_percentage': signal.max_profit_percentage,
+                            'max_loss_percentage': signal.max_loss_percentage,
+                            'duration_hours': (signal.updated_at - signal.created_at).total_seconds() / 3600,
+                            'failure_reason': self._analyze_failure_reason(signal),
+                            'analysis_data': signal.analysis_data,
+                            'created_at': signal.created_at.isoformat(),
+                            'status': signal.status.value
+                        }
+                        
+                        # M5 confirmation skorları ekle (eğer varsa)
+                        if isinstance(signal.analysis_data, dict):
+                            failed_data['m5_confirmation_score'] = signal.analysis_data.get('m5_confirmation_score', 0)
+                            failed_data['adx_value'] = signal.analysis_data.get('adx_value', 0)
+                            failed_data['volume_score'] = signal.analysis_data.get('volume_score', 0)
+                        
+                        failed_signals.append(failed_data)
+            
+            # Active signals'dan çok eski olanları da ekle (24 saatten eski)
+            for signal in self.active_signals.values():
+                signal_age = datetime.now() - signal.created_at
+                if signal_age.total_seconds() > (20 * 3600):  # 20 saatten eski
+                    failed_data = {
+                        'signal_id': signal.signal_id,
+                        'symbol': signal.symbol,
+                        'signal_type': signal.signal_type,
+                        'entry_price': signal.entry_price,
+                        'stop_loss': signal.stop_loss,
+                        'tp1': signal.tp1,
+                        'tp2': signal.tp2,
+                        'tp3': signal.tp3,
+                        'final_price': signal.current_price,
+                        'max_profit_percentage': signal.max_profit_percentage,
+                        'max_loss_percentage': signal.max_loss_percentage,
+                        'duration_hours': signal_age.total_seconds() / 3600,
+                        'failure_reason': 'signal_too_old',
+                        'analysis_data': signal.analysis_data,
+                        'created_at': signal.created_at.isoformat(),
+                        'status': 'active_too_long'
+                    }
+                    failed_signals.append(failed_data)
+            
+            self.logger.info(f"Son 24 saatte {len(failed_signals)} başarısız sinyal bulundu")
+            return failed_signals
+            
+        except Exception as e:
+            self.logger.error(f"Başarısız sinyal analizi hatası: {e}")
+            return []
+    
+    def _analyze_failure_reason(self, signal: TrackedSignal) -> str:
+        """Sinyalin başarısızlık nedenini analiz et"""
+        try:
+            reasons = []
+            
+            # Stop loss'a takıldı mı?
+            if signal.status == SignalStatus.STOP_LOSS:
+                # SL'a ne kadar hızlı takıldı?
+                duration_hours = (signal.updated_at - signal.created_at).total_seconds() / 3600
+                if duration_hours < 1:
+                    reasons.append("quick_stop_loss")
+                elif duration_hours < 4:
+                    reasons.append("stop_loss_hit")
+                else:
+                    reasons.append("late_stop_loss")
+                
+                # SL çok dar mıydı?
+                if signal.signal_type == "LONG":
+                    sl_distance = ((signal.entry_price - signal.stop_loss) / signal.entry_price) * 100
+                else:
+                    sl_distance = ((signal.stop_loss - signal.entry_price) / signal.entry_price) * 100
+                
+                if sl_distance < 1.0:
+                    reasons.append("sl_too_tight")
+                elif sl_distance > 5.0:
+                    reasons.append("sl_too_wide")
+            
+            # Süresi doldu mu?
+            elif signal.status == SignalStatus.EXPIRED:
+                # TP'lere yaklaştı mı hiç?
+                if signal.signal_type == "LONG":
+                    tp1_distance = ((signal.tp1 - signal.entry_price) / signal.entry_price) * 100
+                    max_reached = signal.max_profit_percentage
+                else:
+                    tp1_distance = ((signal.entry_price - signal.tp1) / signal.entry_price) * 100
+                    max_reached = signal.max_profit_percentage
+                
+                if max_reached < (tp1_distance * 0.3):
+                    reasons.append("tp_missed")
+                elif max_reached < (tp1_distance * 0.7):
+                    reasons.append("tp_too_close")
+                else:
+                    reasons.append("almost_hit_tp")
+            
+            # M5 confirmation zayıf mıydı?
+            if isinstance(signal.analysis_data, dict):
+                m5_score = signal.analysis_data.get('m5_confirmation_score', 100)
+                if m5_score < 60:
+                    reasons.append("weak_m5_confirmation")
+                
+                # ADX zayıf mıydı?
+                adx_value = signal.analysis_data.get('adx_value', 30)
+                if adx_value < 25:
+                    reasons.append("weak_adx")
+                
+                # Volume düşük müydü?
+                volume_score = signal.analysis_data.get('volume_score', 100)
+                if volume_score < 50:
+                    reasons.append("low_volume")
+            
+            # Genel nedenler
+            duration_hours = (signal.updated_at - signal.created_at).total_seconds() / 3600
+            if duration_hours > 20:
+                reasons.append("signal_too_old")
+            
+            return "_".join(reasons) if reasons else "unknown_failure"
+            
+        except Exception as e:
+            self.logger.error(f"Başarısızlık nedeni analizi hatası: {e}")
+            return "analysis_error"
+    
+    def get_signal_performance_stats(self, days: int = 7) -> Dict:
+        """Sinyal performans istatistikleri"""
+        try:
+            cutoff_time = datetime.now() - timedelta(days=days)
+            
+            total_signals = 0
+            successful_signals = 0
+            failed_signals = 0
+            total_profit = 0.0
+            
+            # Completed signals analizi
+            for signal in self.completed_signals:
+                if signal.created_at >= cutoff_time:
+                    total_signals += 1
+                    
+                    if signal.status in [SignalStatus.TP1_HIT, SignalStatus.TP2_HIT, SignalStatus.TP3_HIT]:
+                        successful_signals += 1
+                        total_profit += signal.max_profit_percentage
+                    else:
+                        failed_signals += 1
+                        total_profit += signal.max_loss_percentage  # Negatif değer
+            
+            success_rate = (successful_signals / total_signals * 100) if total_signals > 0 else 0
+            avg_profit = total_profit / total_signals if total_signals > 0 else 0
+            
+            return {
+                'period_days': days,
+                'total_signals': total_signals,
+                'successful_signals': successful_signals,
+                'failed_signals': failed_signals,
+                'success_rate': success_rate,
+                'avg_profit_percentage': avg_profit,
+                'total_profit_percentage': total_profit
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Performans istatistik hatası: {e}")
+            return {}
